@@ -1,10 +1,25 @@
+// CORS headers — allow Zoho widget origin
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+};
+
+// Handle preflight OPTIONS request
+export async function OPTIONS() {
+  return new Response(null, { status: 204, headers: corsHeaders });
+}
+
 export async function POST(req) {
   try {
     const formData = await req.formData();
     const file = formData.get("file");
 
     if (!file) {
-      return Response.json({ error: "No file uploaded" }, { status: 400 });
+      return Response.json(
+        { error: "No file uploaded" },
+        { status: 400, headers: corsHeaders },
+      );
     }
 
     const bytes = await file.arrayBuffer();
@@ -13,7 +28,7 @@ export async function POST(req) {
     if (!process.env.GOOGLE_VISION_API_KEY) {
       return Response.json(
         { error: "GOOGLE_VISION_API_KEY not set" },
-        { status: 500 },
+        { status: 500, headers: corsHeaders },
       );
     }
 
@@ -37,14 +52,20 @@ export async function POST(req) {
     const fullText = visionData.responses?.[0]?.fullTextAnnotation?.text || "";
 
     if (!fullText) {
-      return Response.json({ error: "No text extracted" });
+      return Response.json(
+        { error: "No text extracted" },
+        { status: 200, headers: corsHeaders },
+      );
     }
 
     const result = parseWorkerDetails(fullText);
-    return Response.json(result);
+    return Response.json(result, { headers: corsHeaders });
   } catch (err) {
     console.error("OCR Error:", err);
-    return Response.json({ error: err.message }, { status: 500 });
+    return Response.json(
+      { error: err.message },
+      { status: 500, headers: corsHeaders },
+    );
   }
 }
 
@@ -54,8 +75,6 @@ function parseWorkerDetails(text) {
     .map((l) => l.trim())
     .filter(Boolean);
 
-  // Labels appear first, then values prefixed with ":"
-  // Find label positions and match with corresponding ":" values
   const labelMap = {
     "WP No.": "WP_No",
     "Name of Worker": "Name",
@@ -66,12 +85,9 @@ function parseWorkerDetails(text) {
     "Nationality/Citizenship": "Nationality",
   };
 
-  // Collect all lines starting with ":" — these are the values
   const valuelines = lines.filter((l) => l.startsWith(":"));
-  // Collect label lines in order
   const labelLines = lines.filter((l) => labelMap[l]);
 
-  // Match labels to values by order
   const Worker_Details = {
     WP_No: null,
     Name: null,
@@ -90,18 +106,13 @@ function parseWorkerDetails(text) {
     }
   });
 
-  // Parse Employment History
   const Employment_History = [];
-
   for (let i = 0; i < lines.length; i++) {
-    // Match "Employer 5" style lines
     if (/^Employer\s+\d+$/i.test(lines[i])) {
       const employer = lines[i];
       const startDate = lines[i + 1] || null;
       const endDate = lines[i + 2] || null;
       const industry = lines[i + 3] || null;
-
-      // Validate dates format dd/mm/yyyy
       if (
         startDate?.match(/\d{2}\/\d{2}\/\d{4}/) &&
         endDate?.match(/\d{2}\/\d{2}\/\d{4}/)
@@ -112,7 +123,7 @@ function parseWorkerDetails(text) {
           End_Date: endDate,
           Industry: industry,
         });
-        i += 3; // skip parsed lines
+        i += 3;
       }
     }
   }
